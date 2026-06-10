@@ -2,7 +2,7 @@
 # (linux/amd64 + linux/arm64) via `docker buildx build --platform ...`, so the
 # base resolves to the right architecture for each target. nginx config and the
 # shell entrypoint are arch-independent.
-FROM nginx:1.27-alpine
+FROM nginx:1.31-alpine
 
 LABEL org.opencontainers.image.title="gw-proxy" \
       org.opencontainers.image.version="1.2.1"
