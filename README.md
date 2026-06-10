@@ -99,9 +99,11 @@ kubectl apply -f k8s/deployment.yaml -f k8s/service.yaml
 To add a segment: append `SEGMENT_N_NAME` / `SEGMENT_N_UPSTREAM` / `SEGMENT_N_API_KEYS` to
 the Deployment's `env:`, then `kubectl rollout restart deploy/gw-proxy -n gw-proxy`.
 
-> **Note:** the API keys in `deployment.yaml` are example test values inlined for
-> simplicity. For anything beyond testing, move them into a Kubernetes Secret (referenced
-> via `envFrom: secretRef`) and keep them out of version control.
+> **Important:** `SEGMENT_N_API_KEYS` in `deployment.yaml` ship as non-functional
+> placeholders (`CHANGE_ME_*`) — replace them before deploying, or the gateway only accepts
+> a value that's public in this repo. For anything beyond testing, move the keys into a
+> Kubernetes Secret (referenced via `envFrom: secretRef`) and keep them out of version
+> control.
 
 ### Pod hardening
 
