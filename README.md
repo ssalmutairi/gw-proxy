@@ -56,8 +56,12 @@ ends with `/`, or if an upstream is not `scheme://host[:port]` (http/https, no p
 ## Local Docker
 
 ```bash
-# The Dockerfile pins linux/amd64 (most clusters), so --platform is optional here.
+# Local single-arch build for your host:
 docker build -t gw-proxy:1.0.0 .
+
+# Multi-arch publish (amd64 + arm64) to a registry — what the released image uses:
+#   docker buildx build --platform linux/amd64,linux/arm64 --provenance=false \
+#     -t ghcr.io/<user>/gw-proxy:1.0.0 --push .
 
 # Two upstreams for testing
 docker run --rm -d --name up1 -p 9001:80 kennethreitz/httpbin

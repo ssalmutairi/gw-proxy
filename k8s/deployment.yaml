@@ -47,7 +47,7 @@ spec:
             - name: SEGMENT_2_UPSTREAM
               value: "http://app2-svc.default.svc.cluster.local:8080"
             - name: SEGMENT_2_API_KEYS
-              value: "CHANGE_ME_app2"         # PLACEHOLDER — replace before deploying
+              value: "test-key-app2"          # EXAMPLE ONLY — replace with real keys
           livenessProbe:
             httpGet:
               path: /healthz

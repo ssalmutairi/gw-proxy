@@ -1,6 +1,8 @@
-# Pin the target platform so the image is always built for linux/amd64
-# (most K8s nodes), even when built on an arm64 host like Apple Silicon.
-FROM --platform=linux/amd64 nginx:1.27-alpine
+# No platform pin here: the image is published as a multi-arch manifest
+# (linux/amd64 + linux/arm64) via `docker buildx build --platform ...`, so the
+# base resolves to the right architecture for each target. nginx config and the
+# shell entrypoint are arch-independent.
+FROM nginx:1.27-alpine
 
 LABEL org.opencontainers.image.title="gw-proxy" \
       org.opencontainers.image.version="1.0.0"
