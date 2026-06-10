@@ -4,12 +4,16 @@ A small, Dockerized nginx reverse proxy that routes requests to multiple upstrea
 based on the first URL path segment, enforces an `x-api-key` allow-list per segment, and
 strips the segment prefix and the API-key header before forwarding to the upstream.
 
-Designed to be configured entirely through environment variables so it can be driven by
-Kubernetes ConfigMaps and Secrets.
+Designed to be configured entirely through environment variables, so it can be driven by a
+Kubernetes Deployment's `env:` (or ConfigMaps/Secrets if you prefer).
+
+Prebuilt multi-arch image (linux/amd64 + linux/arm64):
+`ghcr.io/ssalmutairi/gw-proxy:1.2.1`.
 
 ## Behavior
 
-- `GET /<segment>/<path>` is forwarded to `<upstream>/<path>` (segment prefix stripped).
+- `<segment>/<path>` is forwarded to `<upstream>/<path>` (segment prefix stripped). Any
+  HTTP method is proxied, not just `GET`.
 - `x-api-key` is required on every proxied request. Each segment has its own allow-list of
   accepted keys. Missing or unknown key → `401`. The header is stripped before the upstream
   call so backends never see the gateway-side secret.
