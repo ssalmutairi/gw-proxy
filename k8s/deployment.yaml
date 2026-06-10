@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gw-proxy
+  namespace: gw-proxy
+  labels:
+    app: gw-proxy
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: gw-proxy
+  template:
+    metadata:
+      labels:
+        app: gw-proxy
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101          # 'nginx' user in the nginx:alpine image
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gw-proxy
+          image: ghcr.io/ssalmutairi/gw-proxy:1.0.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - name: http
+              containerPort: 8080
+          # All config inline for simplicity. Tunables (LISTEN_PORT, RATE_LIMIT, etc.)
+          # use their defaults from docker-entrypoint.sh unless overridden here.
+          env:
+            - name: SEGMENT_1_NAME
+              value: "app1"
+            - name: SEGMENT_1_UPSTREAM
+              value: "http://app1-svc.default.svc.cluster.local:8080"
+            - name: SEGMENT_1_API_KEYS
+              value: "test-key-app1"          # EXAMPLE ONLY — replace with real keys
+            - name: SEGMENT_2_NAME
+              value: "app2"
+            - name: SEGMENT_2_UPSTREAM
+              value: "http://app2-svc.default.svc.cluster.local:8080"
+            - name: SEGMENT_2_API_KEYS
+              value: "test-key-app2"          # EXAMPLE ONLY — replace with real keys
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 200m
+              memory: 64Mi
+            # No CPU limit on purpose: a CPU limit triggers CFS throttling, which
+            # adds tail latency to a proxy that's mostly waiting on I/O. The request
+            # guarantees a floor; bursts above it use spare node capacity. A memory
+            # limit is kept to bound the blast radius of a runaway pod.
+            limits:
+              memory: 256Mi

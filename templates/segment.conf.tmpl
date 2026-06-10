@@ -1,0 +1,18 @@
+    location /__SEGMENT__/ {
+        limit_req zone=perip burst=__RATE_BURST__ nodelay;
+
+        if ($valid_key___SEGMENT__ = 0) { return 401; }
+
+        proxy_set_header X-Api-Key "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Reuse pooled upstream connections (pool defined in `upstream backend___SEGMENT__`).
+        # HTTP/1.1 + an empty Connection header are required for keepalive to the backend.
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+
+        proxy_pass __SCHEME__://backend___SEGMENT__/;
+    }
