@@ -58,6 +58,14 @@ nginx failing to boot — and it picks up Service IP changes without a restart. 
 rate limiting still apply before the upstream is contacted, so a down backend never
 bypasses the key check.
 
+Access logs are emitted to stdout as **structured JSON** (one object per request) with the
+resolved upstream, upstream status, and request/upstream timing — ready for Loki/ELK/
+CloudWatch. `/healthz` and `/readyz` are not logged. Example:
+
+```json
+{"time":"2026-06-10T05:38:19+00:00","client":"10.233.105.236","method":"GET","uri":"/app2/get","status":502,"bytes":157,"request_time":0.000,"upstream":"backend_app2","upstream_status":"502","upstream_time":"0.000","user_agent":"curl/8.7.1"}
+```
+
 The container exits non-zero with a clear error if `SEGMENT_1_NAME` is unset, if a
 present segment is missing its upstream or keys, if a name fails the regex, if an upstream
 ends with `/`, or if an upstream is not `scheme://host[:port]` (http/https, no path).
@@ -66,11 +74,11 @@ ends with `/`, or if an upstream is not `scheme://host[:port]` (http/https, no p
 
 ```bash
 # Local single-arch build for your host:
-docker build -t gw-proxy:1.1.0 .
+docker build -t gw-proxy:1.2.0 .
 
 # Multi-arch publish (amd64 + arm64) to a registry — what the released image uses:
 #   docker buildx build --platform linux/amd64,linux/arm64 --provenance=false \
-#     -t ghcr.io/<user>/gw-proxy:1.1.0 --push .
+#     -t ghcr.io/<user>/gw-proxy:1.2.0 --push .
 
 # Two upstreams for testing
 docker run --rm -d --name up1 -p 9001:80 kennethreitz/httpbin
@@ -84,7 +92,7 @@ docker run --rm -p 8080:8080 \
   -e SEGMENT_2_NAME=app2 \
   -e SEGMENT_2_UPSTREAM=http://host.docker.internal:9002 \
   -e SEGMENT_2_API_KEYS=k2a \
-  gw-proxy:1.1.0
+  gw-proxy:1.2.0
 ```
 
 Verify:

@@ -42,6 +42,27 @@ segment_tmpl="$(cat "$TEMPLATE_DIR/segment.conf.tmpl")"
     echo "resolver ${RESOLVER} valid=${RESOLVER_VALID} ipv6=off;"
     echo
 
+    # Structured (JSON) access log including the resolved upstream and timing, so
+    # logs are parseable by Loki/ELK/CloudWatch and show which backend served (or
+    # failed) each request. escape=json keeps string fields valid when they contain
+    # quotes; numeric fields ($status/$body_bytes_sent/$request_time) stay unquoted.
+    cat <<'NGINX_LOGFMT'
+log_format gw_json escape=json '{'
+    '"time":"$time_iso8601",'
+    '"client":"$remote_addr",'
+    '"method":"$request_method",'
+    '"uri":"$request_uri",'
+    '"status":$status,'
+    '"bytes":$body_bytes_sent,'
+    '"request_time":$request_time,'
+    '"upstream":"$upstream_addr",'
+    '"upstream_status":"$upstream_status",'
+    '"upstream_time":"$upstream_response_time",'
+    '"user_agent":"$http_user_agent"'
+'}';
+NGINX_LOGFMT
+    echo
+
     # Per-client request rate limit, shared across all segments. Keyed on the
     # client IP so a single source can't brute-force API keys. Rejected requests
     # get 429 instead of nginx's default 503.
@@ -111,6 +132,7 @@ segment_tmpl="$(cat "$TEMPLATE_DIR/segment.conf.tmpl")"
     echo "    listen ${LISTEN_PORT};"
     echo "    server_name _;"
     echo "    client_max_body_size ${CLIENT_MAX_BODY_SIZE};"
+    echo "    access_log /dev/stdout gw_json;"
     # Emit relative redirects so the auto 301 for a bare /<segment> doesn't leak
     # the internal listen port/scheme (e.g. http://host:8080/app1/).
     echo "    absolute_redirect off;"
