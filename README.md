@@ -10,6 +10,20 @@ Kubernetes Deployment's `env:` (or ConfigMaps/Secrets if you prefer).
 Prebuilt multi-arch image (linux/amd64 + linux/arm64):
 `ghcr.io/ssalmutairi/gw-proxy:1.2.1`.
 
+## Features
+
+- **Path-segment routing** — `GET /app1/...` → upstream A, `GET /app2/...` → upstream B,
+  with the segment prefix stripped before forwarding.
+- **Per-segment API-key auth** — independent `x-api-key` allow-list per segment; the key
+  header is stripped before the upstream call.
+- **Per-client rate limiting** — IP-based `limit_req`, returns `429` over the limit.
+- **Upstream keepalive** — pooled, reused backend connections for throughput.
+- **Runtime DNS resolution** — a missing/not-yet-ready upstream returns `502` instead of
+  blocking startup; Service IP changes are picked up without a restart.
+- **Hardened & stateless** — non-root, all capabilities dropped, no mounted volumes;
+  scales horizontally.
+- **Zero-file config** — everything is driven by environment variables.
+
 ## Behavior
 
 - `<segment>/<path>` is forwarded to `<upstream>/<path>` (segment prefix stripped). Any
@@ -175,6 +189,18 @@ The proxy is built to scale horizontally for heavy traffic. The pieces that matt
    resolved to `1`, then forwards via `proxy_pass <scheme>://backend_<segment>/;` (trailing
    slash strips the prefix) with `X-Api-Key` cleared and upstream keepalive enabled.
 4. Runs `nginx -t` to validate the rendered config, then `exec nginx -g 'daemon off;'`.
+
+## Limitations
+
+- **No TLS termination.** The gateway listens on plain HTTP and is meant to sit behind an
+  ingress controller or load balancer that terminates TLS.
+- **Routing is by first path segment only** — no host-based routing, header matching, or
+  regex paths.
+- **API keys are static** — defined via env vars; no rotation, expiry, or per-key rate
+  limits. The header allow-list is a coarse gate, not a full auth system.
+- **Upstreams must be `scheme://host[:port]`** (http/https, no path component).
+- **Rate limiting is per source IP** — behind a NAT/L4 LB that hides the client, requests
+  share an IP; terminate `X-Forwarded-For` correctly or raise `RATE_LIMIT`.
 
 ## License
 
