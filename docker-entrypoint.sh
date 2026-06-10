@@ -6,6 +6,10 @@ CLIENT_MAX_BODY_SIZE="${CLIENT_MAX_BODY_SIZE:-10m}"
 RATE_LIMIT="${RATE_LIMIT:-10r/s}"
 RATE_LIMIT_BURST="${RATE_LIMIT_BURST:-20}"
 UPSTREAM_KEEPALIVE="${UPSTREAM_KEEPALIVE:-32}"
+# DNS server for runtime upstream resolution. Default to the first nameserver in
+# the container's resolv.conf (CoreDNS in Kubernetes, Docker's embedded DNS locally).
+RESOLVER="${RESOLVER:-$(awk '/^nameserver/{print $2; exit}' /etc/resolv.conf 2>/dev/null)}"
+RESOLVER_VALID="${RESOLVER_VALID:-30s}"
 
 TEMPLATE_DIR="/etc/nginx/templates-src"
 OUT="/etc/nginx/conf.d/default.conf"
@@ -23,11 +27,19 @@ die() { echo "nginx-proxy: $*" >&2; exit 1; }
     || die "RATE_LIMIT_BURST='${RATE_LIMIT_BURST}' invalid: must be a non-negative integer"
 [[ "$UPSTREAM_KEEPALIVE" =~ ^[0-9]+$ ]] \
     || die "UPSTREAM_KEEPALIVE='${UPSTREAM_KEEPALIVE}' invalid: must be a non-negative integer"
+[[ -n "$RESOLVER" ]] \
+    || die "could not determine a DNS resolver from /etc/resolv.conf; set RESOLVER explicitly"
 
 segment_tmpl="$(cat "$TEMPLATE_DIR/segment.conf.tmpl")"
 
 {
     cat "$TEMPLATE_DIR/nginx.conf.head"
+    echo
+
+    # DNS resolver for runtime upstream resolution (the `resolve` parameter on the
+    # upstream servers below). Lets the gateway start even when an upstream name
+    # doesn't resolve yet — such requests get 502 instead of nginx failing to boot.
+    echo "resolver ${RESOLVER} valid=${RESOLVER_VALID} ipv6=off;"
     echo
 
     # Per-client request rate limit, shared across all segments. Keyed on the
@@ -66,8 +78,12 @@ segment_tmpl="$(cat "$TEMPLATE_DIR/segment.conf.tmpl")"
 
         # Named upstream with a keepalive connection pool, so proxied requests reuse
         # TCP connections to the backend instead of opening a new one each time.
+        # `resolve` (needs `zone` + the `resolver` above) defers DNS to runtime and
+        # re-resolves periodically, so a missing/not-yet-ready upstream yields 502
+        # rather than blocking nginx from starting.
         echo "upstream backend_${name} {"
-        echo "    server ${hostport};"
+        echo "    zone backend_${name} 64k;"
+        echo "    server ${hostport} resolve;"
         echo "    keepalive ${UPSTREAM_KEEPALIVE};"
         echo "}"
         echo

@@ -37,6 +37,8 @@ Global (optional):
 | `RATE_LIMIT`           | `10r/s` | Per-client-IP request rate. Form `<int>r/s` or `<int>r/m`. |
 | `RATE_LIMIT_BURST`     | `20`    | Burst allowance above the rate; excess → `429`.        |
 | `UPSTREAM_KEEPALIVE`   | `32`    | Idle keepalive connections cached per upstream.        |
+| `RESOLVER`             | _auto_  | DNS server for runtime upstream resolution. Defaults to the first `nameserver` in `/etc/resolv.conf` (CoreDNS in K8s). |
+| `RESOLVER_VALID`       | `30s`   | How long resolved upstream IPs are cached before re-resolving. |
 
 Rate limiting is per client IP (`$binary_remote_addr`), shared across all segments, and
 applied to the proxied locations only — `/healthz` and `/readyz` are never limited.
@@ -49,6 +51,13 @@ so proxied requests reuse TCP connections to the backend instead of opening a fr
 per request — the main throughput win under load. Tune the pool size with
 `UPSTREAM_KEEPALIVE`.
 
+Upstream hostnames are resolved **at runtime** (the `resolve` parameter, backed by
+`RESOLVER`) and re-resolved every `RESOLVER_VALID`. This means the gateway starts even
+when an upstream name doesn't resolve yet — requests to that segment get `502` instead of
+nginx failing to boot — and it picks up Service IP changes without a restart. Auth and
+rate limiting still apply before the upstream is contacted, so a down backend never
+bypasses the key check.
+
 The container exits non-zero with a clear error if `SEGMENT_1_NAME` is unset, if a
 present segment is missing its upstream or keys, if a name fails the regex, if an upstream
 ends with `/`, or if an upstream is not `scheme://host[:port]` (http/https, no path).
@@ -57,11 +66,11 @@ ends with `/`, or if an upstream is not `scheme://host[:port]` (http/https, no p
 
 ```bash
 # Local single-arch build for your host:
-docker build -t gw-proxy:1.0.0 .
+docker build -t gw-proxy:1.1.0 .
 
 # Multi-arch publish (amd64 + arm64) to a registry — what the released image uses:
 #   docker buildx build --platform linux/amd64,linux/arm64 --provenance=false \
-#     -t ghcr.io/<user>/gw-proxy:1.0.0 --push .
+#     -t ghcr.io/<user>/gw-proxy:1.1.0 --push .
 
 # Two upstreams for testing
 docker run --rm -d --name up1 -p 9001:80 kennethreitz/httpbin
@@ -75,7 +84,7 @@ docker run --rm -p 8080:8080 \
   -e SEGMENT_2_NAME=app2 \
   -e SEGMENT_2_UPSTREAM=http://host.docker.internal:9002 \
   -e SEGMENT_2_API_KEYS=k2a \
-  gw-proxy:1.0.0
+  gw-proxy:1.1.0
 ```
 
 Verify:

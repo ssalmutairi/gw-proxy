@@ -1,0 +1,54 @@
+# Testing-only upstream for gw-proxy. Deploys httpbin into the gw-proxy
+# namespace so the gateway has a real backend to proxy to. Delete when done:
+#   kubectl delete -f k8s/httpbin.testing.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: httpbin
+  namespace: gw-proxy
+  labels:
+    app: httpbin
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: httpbin
+  template:
+    metadata:
+      labels:
+        app: httpbin
+    spec:
+      containers:
+        - name: httpbin
+          image: kennethreitz/httpbin
+          ports:
+            - name: http
+              containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /status/200
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: httpbin
+  namespace: gw-proxy
+  labels:
+    app: httpbin
+spec:
+  type: ClusterIP
+  selector:
+    app: httpbin
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

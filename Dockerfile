@@ -5,7 +5,7 @@
 FROM nginx:1.27-alpine
 
 LABEL org.opencontainers.image.title="gw-proxy" \
-      org.opencontainers.image.version="1.0.0"
+      org.opencontainers.image.version="1.1.0"
 
 RUN apk add --no-cache bash
 
