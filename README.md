@@ -8,7 +8,7 @@ Designed to be configured entirely through environment variables, so it can be d
 Kubernetes Deployment's `env:` (or ConfigMaps/Secrets if you prefer).
 
 Prebuilt multi-arch image (linux/amd64 + linux/arm64):
-`ghcr.io/ssalmutairi/gw-proxy:1.2.1`.
+`ghcr.io/ssalmutairi/gw-proxy:1.3.0`.
 
 ## Features
 
@@ -16,7 +16,8 @@ Prebuilt multi-arch image (linux/amd64 + linux/arm64):
   with the segment prefix stripped before forwarding.
 - **Per-segment API-key auth** — independent `x-api-key` allow-list per segment; the key
   header is stripped before the upstream call.
-- **Per-client rate limiting** — IP-based `limit_req`, returns `429` over the limit.
+- **Optional rate limiting** — opt-in per-client-IP `limit_req` (off by default); returns
+  `429` over the limit.
 - **Upstream keepalive** — pooled, reused backend connections for throughput.
 - **Runtime DNS resolution** — a missing/not-yet-ready upstream returns `502` instead of
   blocking startup; Service IP changes are picked up without a restart.
@@ -52,17 +53,18 @@ Global (optional):
 | ---------------------- | ------- | ------------------------------------------------------ |
 | `LISTEN_PORT`          | `8080`  | Port nginx listens on. Default is unprivileged since the container runs as non-root. |
 | `CLIENT_MAX_BODY_SIZE` | `10m`   | Inbound request body limit.                            |
-| `RATE_LIMIT`           | `10r/s` | Per-client-IP request rate. Form `<int>r/s` or `<int>r/m`. |
-| `RATE_LIMIT_BURST`     | `20`    | Burst allowance above the rate; excess → `429`.        |
+| `RATE_LIMIT`           | `off`   | Per-client-IP request rate, e.g. `10r/s` or `600r/m`. `off` (default) disables rate limiting. |
+| `RATE_LIMIT_BURST`     | `20`    | Burst allowance above the rate (only when `RATE_LIMIT` is set); excess → `429`. |
 | `UPSTREAM_KEEPALIVE`   | `32`    | Idle keepalive connections cached per upstream.        |
 | `RESOLVER`             | _auto_  | DNS server for runtime upstream resolution. Defaults to the first `nameserver` in `/etc/resolv.conf` (CoreDNS in K8s). |
 | `RESOLVER_VALID`       | `30s`   | How long resolved upstream IPs are cached before re-resolving. |
 
-Rate limiting is per client IP (`$binary_remote_addr`), shared across all segments, and
-applied to the proxied locations only — `/healthz` and `/readyz` are never limited.
-Requests over the limit get `429`. Note: nginx sees the IP of whatever connects to it, so
-behind a load balancer set `RATE_LIMIT` against the LB's `X-Forwarded-For` handling
-expectations (see "Heavy load" below).
+Rate limiting is **opt-in and off by default** — a proxy shouldn't throttle unless asked.
+Set `RATE_LIMIT` (e.g. `100r/s`) to enable a per-client-IP limit (`$binary_remote_addr`),
+shared across all segments and applied to proxied locations only (`/healthz` and `/readyz`
+are never limited). Requests over the limit get `429`. Note: nginx sees the IP of whatever
+connects to it, so behind a load balancer it limits per-LB-IP unless `X-Forwarded-For` is
+handled (see "Heavy load" below).
 
 Each upstream is wired through a named `upstream` block with a keepalive connection pool,
 so proxied requests reuse TCP connections to the backend instead of opening a fresh one
@@ -86,11 +88,11 @@ ends with `/`, or if an upstream is not `scheme://host[:port]` (http/https, no p
 
 ```bash
 # Local single-arch build for your host:
-docker build -t gw-proxy:1.2.1 .
+docker build -t gw-proxy:1.3.0 .
 
 # Multi-arch publish (amd64 + arm64) to a registry — what the released image uses:
 #   docker buildx build --platform linux/amd64,linux/arm64 --provenance=false \
-#     -t ghcr.io/<user>/gw-proxy:1.2.1 --push .
+#     -t ghcr.io/<user>/gw-proxy:1.3.0 --push .
 
 # Two upstreams for testing
 docker run --rm -d --name up1 -p 9001:80 kennethreitz/httpbin
@@ -104,7 +106,7 @@ docker run --rm -p 8080:8080 \
   -e SEGMENT_2_NAME=app2 \
   -e SEGMENT_2_UPSTREAM=http://host.docker.internal:9002 \
   -e SEGMENT_2_API_KEYS=k2a \
-  gw-proxy:1.2.1
+  gw-proxy:1.3.0
 ```
 
 Verify:
@@ -174,9 +176,10 @@ The proxy is built to scale horizontally for heavy traffic. The pieces that matt
 - **Replica count.** The pod is stateless, so scaling is just `kubectl scale` (or a higher
   `replicas` in the manifest). Size it to your peak RPS; a PodDisruptionBudget is worth
   adding so rollouts/drains don't take all replicas at once.
-- **Rate limit vs. shared source IPs.** `RATE_LIMIT` is per client IP. Behind a NAT or an
-  L4 load balancer that hides the real client, many users share one IP and can trip `429`.
-  Terminate XFF correctly (or set the limit high) in those topologies.
+- **Rate limit vs. shared source IPs.** Rate limiting is off by default. If you enable
+  `RATE_LIMIT`, it's per client IP — behind a NAT or L4 load balancer that hides the real
+  client, many users share one IP and can trip `429`. Terminate XFF correctly (or set the
+  limit high) in those topologies.
 
 ## How it works
 
@@ -199,8 +202,9 @@ The proxy is built to scale horizontally for heavy traffic. The pieces that matt
 - **API keys are static** — defined via env vars; no rotation, expiry, or per-key rate
   limits. The header allow-list is a coarse gate, not a full auth system.
 - **Upstreams must be `scheme://host[:port]`** (http/https, no path component).
-- **Rate limiting is per source IP** — behind a NAT/L4 LB that hides the client, requests
-  share an IP; terminate `X-Forwarded-For` correctly or raise `RATE_LIMIT`.
+- **Rate limiting (when enabled) is per source IP** — it's off by default; if you turn it
+  on behind a NAT/L4 LB that hides the client, requests share an IP, so terminate
+  `X-Forwarded-For` correctly or raise `RATE_LIMIT`.
 
 ## License
 

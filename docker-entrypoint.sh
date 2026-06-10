@@ -3,7 +3,9 @@ set -euo pipefail
 
 LISTEN_PORT="${LISTEN_PORT:-8080}"
 CLIENT_MAX_BODY_SIZE="${CLIENT_MAX_BODY_SIZE:-10m}"
-RATE_LIMIT="${RATE_LIMIT:-10r/s}"
+# Rate limiting is opt-in and off by default (a proxy shouldn't throttle by default).
+# Set RATE_LIMIT to e.g. '10r/s' or '600r/m' to enable a per-client-IP limit.
+RATE_LIMIT="${RATE_LIMIT:-off}"
 RATE_LIMIT_BURST="${RATE_LIMIT_BURST:-20}"
 UPSTREAM_KEEPALIVE="${UPSTREAM_KEEPALIVE:-32}"
 # DNS server for runtime upstream resolution. Default to the first nameserver in
@@ -21,10 +23,18 @@ die() { echo "nginx-proxy: $*" >&2; exit 1; }
 
 [[ -n "${SEGMENT_1_NAME:-}" ]] || die "no segments defined: SEGMENT_1_NAME is required"
 
-[[ "$RATE_LIMIT" =~ ^[0-9]+r/[sm]$ ]] \
-    || die "RATE_LIMIT='${RATE_LIMIT}' invalid: must look like '10r/s' or '600r/m'"
-[[ "$RATE_LIMIT_BURST" =~ ^[0-9]+$ ]] \
-    || die "RATE_LIMIT_BURST='${RATE_LIMIT_BURST}' invalid: must be a non-negative integer"
+if [[ "$RATE_LIMIT" != "off" ]]; then
+    [[ "$RATE_LIMIT" =~ ^[0-9]+r/[sm]$ ]] \
+        || die "RATE_LIMIT='${RATE_LIMIT}' invalid: use 'off' or a rate like '10r/s' or '600r/m'"
+    [[ "$RATE_LIMIT_BURST" =~ ^[0-9]+$ ]] \
+        || die "RATE_LIMIT_BURST='${RATE_LIMIT_BURST}' invalid: must be a non-negative integer"
+fi
+# Per-location directive, substituted into each segment block (empty when disabled).
+if [[ "$RATE_LIMIT" != "off" ]]; then
+    LIMIT_REQ_LINE="limit_req zone=perip burst=${RATE_LIMIT_BURST} nodelay;"
+else
+    LIMIT_REQ_LINE=""
+fi
 [[ "$UPSTREAM_KEEPALIVE" =~ ^[0-9]+$ ]] \
     || die "UPSTREAM_KEEPALIVE='${UPSTREAM_KEEPALIVE}' invalid: must be a non-negative integer"
 [[ -n "$RESOLVER" ]] \
@@ -42,12 +52,13 @@ segment_tmpl="$(cat "$TEMPLATE_DIR/segment.conf.tmpl")"
     echo "resolver ${RESOLVER} valid=${RESOLVER_VALID} ipv6=off;"
     echo
 
-    # Per-client request rate limit, shared across all segments. Keyed on the
-    # client IP so a single source can't brute-force API keys. Rejected requests
-    # get 429 instead of nginx's default 503.
-    echo "limit_req_zone \$binary_remote_addr zone=perip:10m rate=${RATE_LIMIT};"
-    echo "limit_req_status 429;"
-    echo
+    # Per-client request rate limit (opt-in via RATE_LIMIT). Keyed on the client IP
+    # so a single source can't brute-force API keys. Rejected requests get 429.
+    if [[ "$RATE_LIMIT" != "off" ]]; then
+        echo "limit_req_zone \$binary_remote_addr zone=perip:10m rate=${RATE_LIMIT};"
+        echo "limit_req_status 429;"
+        echo
+    fi
 
     # Emit one map per segment so each location can check $valid_key_<segment>.
     n=1
@@ -132,7 +143,7 @@ segment_tmpl="$(cat "$TEMPLATE_DIR/segment.conf.tmpl")"
         block="$segment_tmpl"
         block="${block//__SEGMENT__/$name}"
         block="${block//__SCHEME__/$scheme}"
-        block="${block//__RATE_BURST__/$RATE_LIMIT_BURST}"
+        block="${block//__LIMIT_REQ__/$LIMIT_REQ_LINE}"
         echo "$block"
         echo
 

@@ -23,7 +23,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: gw-proxy
-          image: ghcr.io/ssalmutairi/gw-proxy:1.2.1
+          image: ghcr.io/ssalmutairi/gw-proxy:1.3.0
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false

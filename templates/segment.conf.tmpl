@@ -1,6 +1,5 @@
     location /__SEGMENT__/ {
-        limit_req zone=perip burst=__RATE_BURST__ nodelay;
-
+        __LIMIT_REQ__
         if ($valid_key___SEGMENT__ = 0) { return 401; }
 
         proxy_set_header X-Api-Key "";
